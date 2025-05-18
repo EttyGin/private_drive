@@ -1,0 +1,175 @@
+import sys
+import termios
+import tty
+import select
+from contextlib import contextmanager
+from kubernetes import client, config
+from kubernetes.stream import stream
+from kubernetes.config.config_exception import ConfigException
+
+
+# class TerminalStateManager:
+#     def __enter__(self):
+#         self.orig_settings = termios.tcgetattr(sys.stdin)
+#         tty.setraw(sys.stdin.fileno())
+#         return self
+
+#     def __exit__(self, exc_type, exc_val, exc_tb):
+#         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.orig_settings)
+@contextmanager
+def terminal_raw_mode():
+    orig_settings = termios.tcgetattr(sys.stdin)
+    try:
+        tty.setraw(sys.stdin.fileno())
+        yield
+    finally:
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, orig_settings)
+
+@contextmanager
+def kube_exec_stream(api, namespace, pod):
+    resp = None
+    try:
+        resp = stream(
+            api.connect_get_namespaced_pod_exec,
+            pod,
+            namespace,
+            command=["/bin/bash"],
+            stderr=True,
+            stdin=True,
+            stdout=True,
+            tty=True,
+            _preload_content=False
+        )
+        yield resp
+    finally:
+        if resp:
+            resp.close()
+
+
+def exec_to_pod(api, namespace, pod):
+    with terminal_raw_mode(), kube_exec_stream(api, namespace, pod) as resp:
+        while resp.is_open():
+            rlist, _, _ = select.select([sys.stdin, resp.sock], [], [])
+            if sys.stdin in rlist:
+                data = sys.stdin.read(1)
+                if data:
+                    resp.write_stdin(data)
+
+            if resp.sock in rlist:
+                resp.update(timeout=1)
+                if resp.peek_stdout():
+                    out = resp.read_stdout()
+                    if out:
+                        sys.stdout.write(out)
+                        sys.stdout.flush()
+                if resp.peek_stderr():
+                    err = resp.read_stderr()
+                    if err:
+                        sys.stderr.write(err)
+                        sys.stderr.flush()
+
+
+def load_kube_api():
+    """Tries to load kube config and return CoreV1Api"""
+    try:
+        config.load_kube_config()
+    except ConfigException:
+        config.load_incluster_config()
+    return client.CoreV1Api()
+
+
+if __name__ == "__main__":
+    api = load_kube_api()
+
+    # Customize as needed
+    namespace = "jhub"
+    pod = "jupyter-e"
+
+    exec_to_pod(api, namespace, pod)import sys
+import termios
+import tty
+import select
+from contextlib import contextmanager
+from kubernetes import client, config
+from kubernetes.stream import stream
+from kubernetes.config.config_exception import ConfigException
+
+
+# class TerminalStateManager:
+#     def __enter__(self):
+#         self.orig_settings = termios.tcgetattr(sys.stdin)
+#         tty.setraw(sys.stdin.fileno())
+#         return self
+
+#     def __exit__(self, exc_type, exc_val, exc_tb):
+#         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.orig_settings)
+@contextmanager
+def terminal_raw_mode():
+    orig_settings = termios.tcgetattr(sys.stdin)
+    try:
+        tty.setraw(sys.stdin.fileno())
+        yield
+    finally:
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, orig_settings)
+
+@contextmanager
+def kube_exec_stream(api, namespace, pod):
+    resp = None
+    try:
+        resp = stream(
+            api.connect_get_namespaced_pod_exec,
+            pod,
+            namespace,
+            command=["/bin/bash"],
+            stderr=True,
+            stdin=True,
+            stdout=True,
+            tty=True,
+            _preload_content=False
+        )
+        yield resp
+    finally:
+        if resp:
+            resp.close()
+
+
+def exec_to_pod(api, namespace, pod):
+    with terminal_raw_mode(), kube_exec_stream(api, namespace, pod) as resp:
+        while resp.is_open():
+            rlist, _, _ = select.select([sys.stdin, resp.sock], [], [])
+            if sys.stdin in rlist:
+                data = sys.stdin.read(1)
+                if data:
+                    resp.write_stdin(data)
+
+            if resp.sock in rlist:
+                resp.update(timeout=1)
+                if resp.peek_stdout():
+                    out = resp.read_stdout()
+                    if out:
+                        sys.stdout.write(out)
+                        sys.stdout.flush()
+                if resp.peek_stderr():
+                    err = resp.read_stderr()
+                    if err:
+                        sys.stderr.write(err)
+                        sys.stderr.flush()
+
+
+def load_kube_api():
+    """Tries to load kube config and return CoreV1Api"""
+    try:
+        config.load_kube_config()
+    except ConfigException:
+        config.load_incluster_config()
+    return client.CoreV1Api()
+
+
+if __name__ == "__main__":
+    api = load_kube_api()
+
+    # Customize as needed
+    namespace = "jhub"
+    pod = "jupyter-e"
+
+    exec_to_pod(api, namespace, pod)
