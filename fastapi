@@ -1,0 +1,40 @@
+from dotenv import load_dotenv
+load_dotenv()  # ← זה חייב לבוא לפני שמשתמשים ב־os.environ
+
+import os
+from fastapi import FastAPI
+from env_loader import load_secrets_to_env
+app = FastAPI()
+
+@app.get("/")
+def root():
+    return {"message": "Welcome to the Infisical-integrated backend 🚀"}
+
+@app.post("/load-secrets")
+def load_secrets():
+    try:
+        secrets = load_secrets_to_env()
+        return {"status": "ok", "loaded": list(secrets.keys())}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/env/{var_name}")
+def get_env_variable(var_name: str):
+    value = os.environ.get(var_name)
+    if value is None:
+        raise HTTPException(status_code=404, detail=f"{var_name} not found in env")
+    return {var_name: value}
+
+def fetch_secret_from_infisical(secret_name: str) -> str:
+    return "hi"
+
+@app.post("/load_env_var")
+def load_env_var(request: EnvVarRequest):
+    secret_value = fetch_secret_from_infisical(request.secret_name)
+    if secret_value is None:
+        raise HTTPException(status_code=404, detail="Secret not found")
+
+    # טוען את הסוד למשתני הסביבה של התהליך
+    os.environ[request.secret_name] = secret_value
+
+    return {"message": f"Environment variable {request.secret_name} loaded successfully."}
