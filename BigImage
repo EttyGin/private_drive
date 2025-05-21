@@ -10,7 +10,8 @@ IMAGE=$1
 DIR="~/owl"
 
 # Ensure the directory exists
-sudo mkowl 
+if [ ! -d ~/owl ]; then
+  sudo mkowl 
 
 # Install Docker if not installed
 if ! command -v docker &> /dev/null; then
