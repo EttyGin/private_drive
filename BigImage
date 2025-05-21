@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# Check for the correct number of arguments
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <IMAGE> "
+    exit 1
+fi
+
+IMAGE=$1
+DIR="~/owl"
+
+# Ensure the directory exists
+sudo mkowl 
+
+# Install Docker if not installed
+if ! command -v docker &> /dev/null; then
+    echo "Docker is not installed. Installing..."
+    sudo apt update
+    sudo apt install -y docker.io
+else
+    echo "Docker is already installed."
+fi
+
+# Pull the Docker image
+echo "Pulling the Docker image: $IMAGE..."
+sudo docker pull "$IMAGE"
+
+# Save the Docker image, gzip it, and split it into 200MB chunks
+echo "Saving and splitting the Docker image into .tar.gz files..."
+sudo docker save "$IMAGE" | gzip | split --bytes=200M - "${IMAGE//[:\/]/-}.tar.gz"
+
+# Base64 encode each .gz file
+echo "Base64 encoding each .tar.gz file..."
+for file in ${IMAGE//[:\/]/-}.tar.gz*; do
+    base64 "$file" > "$file.txt"
+done
+
+# Move all base64 encoded .txt files to the specified directory
+echo "Moving base64 encoded .txt files to $DIR..."
+mv *.txt "$DIR"
+
+echo "Process completed. All .txt files are moved to $DIR."
