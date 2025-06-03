@@ -1,0 +1,8 @@
+SELECT COUNT(*) FROM message WHERE content ILIKE '%error%' OR meta->>'status' = 'error'; 
+ למצוא שגיאה
+SELECT ROUND(AVG((updated_at - created_at)/1000.0/60.0), 2) AS avg_duration_minutes FROM chat;
+
+ Average Chat Duration (min)
+SELECT date_trunc('hour', to_timestamp(created_at / 1000)) AS hour, COUNT(*) FROM chat GROUP BY hour; 
+
+Activity per Hour – Last 24h
