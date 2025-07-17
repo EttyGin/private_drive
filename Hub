@@ -1,0 +1,31 @@
+hub:
+  extraConfig:
+    singleuser-runtime-metric: |
+      import prometheus_client
+      import time
+      from tornado import gen
+      from jupyterhub.user import User
+
+      # רשימת המדדים
+      singleuser_runtime_gauge = prometheus_client.Gauge(
+          "jupyterhub_singleuser_runtime_seconds",
+          "Time in seconds that a user's singleuser server has been running",
+          ["user"]
+      )
+
+      @gen.coroutine
+      def update_singleuser_runtime():
+          while True:
+              for user in app.users.values():
+                  spawner = user.spawner
+                  if spawner and spawner.ready:
+                      if spawner._spawn_start_time:
+                          runtime = time.time() - spawner._spawn_start_time
+                          singleuser_runtime_gauge.labels(user=user.name).set(runtime)
+              yield gen.sleep(60)  # תעדכן כל דקה
+
+      # נרשום את הקורוטינה להפעלה אחרי שהמערכת מוכנה
+      def post_start_hook(app):
+          app.io_loop.spawn_callback(update_singleuser_runtime)
+
+      c.JupyterHub.post_start_hook = post_start_hook
