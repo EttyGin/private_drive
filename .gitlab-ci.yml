@@ -1,0 +1,18 @@
+
+image: docker:24
+services:
+  - docker:24-dind
+variables:
+  IMAGE_NAME: salmastik/node-modules
+  DOCKER_TLS_CERTDIR: ""  # חשוב!
+  DOCKERHUB_USERNAME: "salmastik"
+before_script:
+  - docker info
+stages:
+  - build
+build-and-push:
+  stage: build
+  script:
+    - docker build -t $IMAGE_NAME:$CI_COMMIT_REF_SLUG .
+    - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+    - docker push $IMAGE_NAME:$CI_COMMIT_REF_SLUG
