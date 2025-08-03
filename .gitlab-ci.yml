@@ -1,18 +1,106 @@
-
-image: docker:24
-services:
-  - docker:24-dind
-variables:
-  IMAGE_NAME: salmastik/node-modules
-  DOCKER_TLS_CERTDIR: ""  # חשוב!
-  DOCKERHUB_USERNAME: "salmastik"
-before_script:
-  - docker info
 stages:
+  - version
+  - update
+  - commit
   - build
-build-and-push:
-  stage: build
+
+variables:
+  GITVERSION_CONTAINER_TAG: "5.11.1-alpine.3.13-6.0"
+
+# חישוב גרסה
+get_unique_semversion:
+  image:
+    name: gittools/gitversion:$GITVERSION_CONTAINER_TAG
+    entrypoint: [""]
+  stage: version
+  variables:
+    GIT_STRATEGY: fetch
+    GIT_DEPTH: 0
+  resource_group: $CI_COMMIT_REF_SLUG
+  rules:
+    - if: '$CI_COMMIT_MESSAGE =~ /chore\(release\): update chart version/'
+      when: never
+    - when: always
+  cache: []
   script:
-    - docker build -t $IMAGE_NAME:$CI_COMMIT_REF_SLUG .
-    - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-    - docker push $IMAGE_NAME:$CI_COMMIT_REF_SLUG
+    - |
+      /tools/dotnet-gitversion /output buildserver
+      grep 'GitVersion_SemVer=' gitversion.properties | tee thisversion.env
+  artifacts:
+    reports:
+      dotenv: thisversion.env
+
+# עדכון Chart.yaml
+update-chart-version:
+  image: alpine:3.18
+  stage: update
+  dependencies:
+    - get_unique_semversion
+  before_script:
+    - apk add yq
+  script:
+    - echo "Updating Chart.yaml to version $GitVersion_SemVer"
+    - yq -i ".version = \"$GitVersion_SemVer\"" Chart.yaml
+  artifacts:
+    paths:
+      - Chart.yaml
+    expire_in: 1 hour
+
+# קומיט ודחיפה
+commit-and-push-version:
+  image: alpine:3.18
+  stage: commit
+  dependencies:
+    - get_unique_semversion
+    - update-chart-version
+  before_script:
+    - apk add git openssh
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan gitlab.com >> ~/.ssh/known_hosts
+    - git config --global user.email "ci@example.com"
+    - git config --global user.name "CI Bot"
+  script:
+    - git remote set-url origin git@gitlab.com:ettyg-group/nodes.git
+    - git checkout "$CI_COMMIT_REF_NAME"
+    - git pull origin "$CI_COMMIT_REF_NAME"
+    - |
+      if git diff --quiet Chart.yaml; then
+        echo "No change to Chart.yaml, skipping commit and tag creation"
+      else
+        git add Chart.yaml
+        git commit -m "chore(release): update chart version to $GitVersion_SemVer"
+        git push origin "$CI_COMMIT_REF_NAME"
+
+        # יצירת תג חדש לפי הגרסה, אם הוא לא קיים כבר
+        TAG="$GitVersion_SemVer"
+        if git rev-parse "$TAG" >/dev/null 2>&1; then
+          echo "Tag $TAG already exists, skipping tag creation."
+        else
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+          echo "Tag $TAG created and pushed."
+        fi
+      fi
+
+  rules:
+    - if: '$CI_COMMIT_MESSAGE =~ /chore\(release\): update chart version/'
+      when: never
+    - when: always
+
+
+---
+
+
+mode: ContinuousDelivery
+
+branches:
+  main:
+    increment: Patch
+    prevent-increment-of-merged-branch-version: false
+    tag: ''
+major-version-bump-message: '(?i)^(breaking change|break).*'
+minor-version-bump-message: '(?i)^(feat|feature).*'
+patch-version-bump-message: '(?i)^(fix|bug|hotfix|patch|docs|doc|style|refactor|perf|test|chore).*'
+no-bump-message: '(?i)^(wip|ci|skip|no-op).*'
